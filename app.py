@@ -12,7 +12,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.units import mm
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Conciliador Bancário - Banco do Brasil", layout="wide")
+st.set_page_config(page_title="Conciliador Bancário", layout="wide")
 
 # --- SENHA ---
 SENHA_MESTRA = "cliente123"
@@ -102,7 +102,7 @@ def processar_pdf(file_bytes):
         return pd.DataFrame()
 
     df_debitos = pd.DataFrame(rows_debitos)
-    df_devolucoes = pd.DataFrame(rows_devolucoes) # Define explicitamente para evitar NameError
+    df_devolucoes = pd.DataFrame(rows_devolucoes)
 
     if not df_devolucoes.empty and not df_debitos.empty:
         idx_rem = []
@@ -174,15 +174,21 @@ def executar_conciliacao_inteligente(df_pdf, df_excel):
     return df_f.sort_values(by=['dt', 'Documento']).drop(columns=['dt'])
 
 # ==============================================================================
-# 2. GERAÇÃO PDF (HISTÓRICO REMOVIDO DO PDF)
+# 2. GERAÇÃO PDF (METADATA ADICIONADO)
 # ==============================================================================
 def gerar_pdf_final(df_f, nome_orig):
+    # Cria o nome limpo para o título do arquivo e metadados
+    nome_limpo = os.path.splitext(nome_orig)[0]
+    titulo_doc = f"Conciliação {nome_limpo}"
+
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=10*mm, leftMargin=10*mm, topMargin=15*mm, bottomMargin=15*mm)
+    # Adiciona parâmetro title para aparecer no navegador/leitor
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=10*mm, leftMargin=10*mm, topMargin=15*mm, bottomMargin=15*mm, title=titulo_doc)
+    
     story = []
     styles = getSampleStyleSheet()
     story.append(Paragraph("Relatório de Conciliação Bancária", styles["Title"]))
-    story.append(Paragraph(f"<b>Conta:</b> {os.path.splitext(nome_orig)[0]}", ParagraphStyle(name='C', alignment=1)))
+    story.append(Paragraph(f"<b>Conta:</b> {nome_limpo}", ParagraphStyle(name='C', alignment=1)))
     story.append(Spacer(1, 15))
     
     # Cabeçalho do PDF sem Histórico
@@ -208,18 +214,38 @@ def gerar_pdf_final(df_f, nome_orig):
     return buffer.getvalue()
 
 # ==============================================================================
-# 3. INTERFACE (FUNDOS BRANCOS E TOTAIS EM NEGRITO)
+# 3. INTERFACE (AJUSTES VISUAIS SOLICITADOS)
 # ==============================================================================
 if check_password():
-    st.title("🏦 Conciliador Bancário - Banco do Brasil")
-    c1, c2 = st.columns(2)
-    with c1: up_pdf = st.file_uploader("1. Extrato (PDF)", type="pdf")
-    with c2: up_xlsx = st.file_uploader("2. Razão (Excel/CSV)", type=["xlsx", "csv"])
+    # 1. Título centralizado sem ícone
+    st.markdown("<h1 style='text-align: center;'>Conciliador Bancário (Banco x GovBr)</h1>", unsafe_allow_html=True)
+    st.markdown("---")
 
-    if st.button("🚀 Processar Conciliação", use_container_width=True):
+    # CSS para aumentar o tamanho das labels dos uploaders
+    st.markdown("""
+    <style>
+    .big-label {
+        font-size: 24px !important;
+        font-weight: 600 !important;
+        margin-bottom: 10px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    c1, c2 = st.columns(2)
+    with c1: 
+        # 2. Label personalizada e aumentada (PDF)
+        st.markdown('<p class="big-label">Selecione o Extrato Bancário em PDF</p>', unsafe_allow_html=True)
+        up_pdf = st.file_uploader("", type="pdf", label_visibility="collapsed")
+    with c2: 
+        # 3. Label personalizada e aumentada (Excel)
+        st.markdown('<p class="big-label">Selecione o Razão da Contabilidade em Excel</p>', unsafe_allow_html=True)
+        up_xlsx = st.file_uploader("", type=["xlsx", "csv"], label_visibility="collapsed")
+
+    # 4. Botão Processar: Sem ícone, tudo maiúsculo
+    if st.button("PROCESSAR CONCILIAÇÃO", use_container_width=True):
         if up_pdf and up_xlsx:
             with st.spinner("Processando..."):
-                # Captura bytes para não perder o ponteiro do arquivo
                 pdf_bytes = up_pdf.read()
                 xlsx_bytes = up_xlsx.read()
                 
@@ -230,7 +256,6 @@ if check_password():
                 
                 df_f = executar_conciliacao_inteligente(df_p, df_e)
                 
-                # HTML com Fundo Branco na Tabela e Totais em Negrito
                 html = """
                 <div style='background-color: white; padding: 15px; border-radius: 5px; border: 1px solid #ddd;'>
                 <table style='width:100%; border-collapse: collapse; color: black !important; background-color: white !important;'>
@@ -254,7 +279,6 @@ if check_password():
                         <td style='text-align: right; color: {d_c}; border: 1px solid #000;'>{formatar_moeda_br(r['Diferença']) if abs(r['Diferença']) >= 0.01 else '-'}</td> 
                     </tr>"""
                 
-                # Totais: Fundo Branco, Fonte Negrito
                 html += f"""
                     <tr style='font-weight: bold; background-color: white; color: black;'> 
                         <td colspan='3' style='padding: 10px; text-align: center; border: 1px solid #000;'>TOTAL</td>
@@ -264,7 +288,14 @@ if check_password():
                     </tr> </table> </div>"""
                 
                 st.markdown(html, unsafe_allow_html=True)
+                
                 pdf_data = gerar_pdf_final(df_f, up_pdf.name)
-                st.download_button("📥 Baixar Relatório PDF", pdf_data, "Relatorio.pdf", "application/pdf", use_container_width=True)
+                
+                # 6. Definição do nome do arquivo para download
+                nome_base_arquivo = os.path.splitext(up_pdf.name)[0]
+                nome_arquivo_pdf = f"Conciliação {nome_base_arquivo}.pdf"
+                
+                # 5. Botão Download: Texto maiúsculo
+                st.download_button("BAIXAR RELATÓRIO PDF", pdf_data, nome_arquivo_pdf, "application/pdf", use_container_width=True)
         else:
             st.warning("⚠️ Selecione os dois arquivos primeiro.")
