@@ -14,6 +14,39 @@ from reportlab.lib.units import mm
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Conciliador Bancário", layout="wide")
 
+# --- CSS PERSONALIZADO (ESTILOS VISUAIS) ---
+st.markdown("""
+<style>
+    /* 1. Reduzir espaçamento do topo da página */
+    .block-container {
+        padding-top: 2rem !important; /* Reduzido de ~6rem padrão */
+        padding-bottom: 2rem !important;
+    }
+
+    /* 2. Estilização dos Botões (Cinza Escuro e Texto em Negrito) */
+    div.stButton > button {
+        background-color: #444444 !important; /* Cinza Escuro */
+        color: white !important;
+        font-weight: bold !important; /* Texto mais forte/negrito */
+        border: none;
+        border-radius: 5px;
+        font-size: 16px;
+        transition: 0.3s;
+    }
+    div.stButton > button:hover {
+        background-color: #2b2b2b !important; /* Cinza mais escuro no hover */
+        color: #ffffff !important;
+    }
+
+    /* 3. Estilo para as Labels Grandes dos Uploaders */
+    .big-label {
+        font-size: 24px !important;
+        font-weight: 600 !important;
+        margin-bottom: 10px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # --- SENHA ---
 SENHA_MESTRA = "cliente123"
 
@@ -31,7 +64,7 @@ def check_password():
     return False
 
 # ==============================================================================
-# 1. FUNÇÕES ORIGINAIS (CONSERVADAS INTEGRALMENTE)
+# 1. FUNÇÕES DE PROCESSAMENTO
 # ==============================================================================
 CURRENT_YEAR = str(datetime.datetime.now().year)
 
@@ -174,24 +207,22 @@ def executar_conciliacao_inteligente(df_pdf, df_excel):
     return df_f.sort_values(by=['dt', 'Documento']).drop(columns=['dt'])
 
 # ==============================================================================
-# 2. GERAÇÃO PDF (METADATA ADICIONADO)
+# 2. GERAÇÃO PDF
 # ==============================================================================
-def gerar_pdf_final(df_f, nome_orig):
-    # Cria o nome limpo para o título do arquivo e metadados
-    nome_limpo = os.path.splitext(nome_orig)[0]
-    titulo_doc = f"Conciliação {nome_limpo}"
-
+def gerar_pdf_final(df_f, titulo_completo):
     buffer = io.BytesIO()
-    # Adiciona parâmetro title para aparecer no navegador/leitor
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=10*mm, leftMargin=10*mm, topMargin=15*mm, bottomMargin=15*mm, title=titulo_doc)
+    # Adiciona o título como metadado para o navegador
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=10*mm, leftMargin=10*mm, topMargin=15*mm, bottomMargin=15*mm, title=titulo_completo)
     
     story = []
     styles = getSampleStyleSheet()
     story.append(Paragraph("Relatório de Conciliação Bancária", styles["Title"]))
-    story.append(Paragraph(f"<b>Conta:</b> {nome_limpo}", ParagraphStyle(name='C', alignment=1)))
+    # Extrai apenas o nome da conta do título completo para exibição interna
+    nome_conta_interno = titulo_completo.replace("Conciliação ", "")
+    story.append(Paragraph(f"<b>Conta:</b> {nome_conta_interno}", ParagraphStyle(name='C', alignment=1)))
     story.append(Spacer(1, 15))
     
-    # Cabeçalho do PDF sem Histórico
+    # Cabeçalho do PDF
     headers = ['Data', 'Documento', 'Vlr. Extrato', 'Vlr. Razão', 'Diferença']
     data = [headers]
     for _, r in df_f.iterrows():
@@ -214,35 +245,21 @@ def gerar_pdf_final(df_f, nome_orig):
     return buffer.getvalue()
 
 # ==============================================================================
-# 3. INTERFACE (AJUSTES VISUAIS SOLICITADOS)
+# 3. INTERFACE
 # ==============================================================================
 if check_password():
-    # 1. Título centralizado sem ícone
+    # Título Centralizado
     st.markdown("<h1 style='text-align: center;'>Conciliador Bancário (Banco x GovBr)</h1>", unsafe_allow_html=True)
     st.markdown("---")
 
-    # CSS para aumentar o tamanho das labels dos uploaders
-    st.markdown("""
-    <style>
-    .big-label {
-        font-size: 24px !important;
-        font-weight: 600 !important;
-        margin-bottom: 10px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
     c1, c2 = st.columns(2)
     with c1: 
-        # 2. Label personalizada e aumentada (PDF)
         st.markdown('<p class="big-label">Selecione o Extrato Bancário em PDF</p>', unsafe_allow_html=True)
         up_pdf = st.file_uploader("", type="pdf", label_visibility="collapsed")
     with c2: 
-        # 3. Label personalizada e aumentada (Excel)
         st.markdown('<p class="big-label">Selecione o Razão da Contabilidade em Excel</p>', unsafe_allow_html=True)
         up_xlsx = st.file_uploader("", type=["xlsx", "csv"], label_visibility="collapsed")
 
-    # 4. Botão Processar: Sem ícone, tudo maiúsculo
     if st.button("PROCESSAR CONCILIAÇÃO", use_container_width=True):
         if up_pdf and up_xlsx:
             with st.spinner("Processando..."):
@@ -256,6 +273,7 @@ if check_password():
                 
                 df_f = executar_conciliacao_inteligente(df_p, df_e)
                 
+                # Renderiza Tabela HTML
                 html = """
                 <div style='background-color: white; padding: 15px; border-radius: 5px; border: 1px solid #ddd;'>
                 <table style='width:100%; border-collapse: collapse; color: black !important; background-color: white !important;'>
@@ -289,13 +307,15 @@ if check_password():
                 
                 st.markdown(html, unsafe_allow_html=True)
                 
-                pdf_data = gerar_pdf_final(df_f, up_pdf.name)
+                # --- Preparação para Download ---
+                nome_limpo = os.path.splitext(up_pdf.name)[0]
+                titulo_final = f"Conciliação {nome_limpo}" # Nome Base usado para Arquivo e Metadado
                 
-                # 6. Definição do nome do arquivo para download
-                nome_base_arquivo = os.path.splitext(up_pdf.name)[0]
-                nome_arquivo_pdf = f"Conciliação {nome_base_arquivo}.pdf"
+                pdf_data = gerar_pdf_final(df_f, titulo_final)
                 
-                # 5. Botão Download: Texto maiúsculo
-                st.download_button("BAIXAR RELATÓRIO PDF", pdf_data, nome_arquivo_pdf, "application/pdf", use_container_width=True)
+                # Espaçador manual para replicar a distância visual antes do botão
+                st.markdown("<div style='height: 30px;'></div>", unsafe_allow_html=True)
+                
+                st.download_button("BAIXAR RELATÓRIO PDF", pdf_data, f"{titulo_final}.pdf", "application/pdf", use_container_width=True)
         else:
             st.warning("⚠️ Selecione os dois arquivos primeiro.")
